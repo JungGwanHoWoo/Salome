@@ -208,23 +208,23 @@ public class GameManager : MonoBehaviour
         StartGame();
     }
 
-    /// <summary>
-    /// 게임 일시정지
-    /// </summary>
-    public void PauseGame()
-    {
-        Time.timeScale = 0f;
-        Debug.Log("[GameManager] Game paused");
-    }
+    // /// <summary>
+    // /// 게임 일시정지
+    // /// </summary>
+    // public void PauseGame()
+    // {
+    //     Time.timeScale = 0f;
+    //     Debug.Log("[GameManager] Game paused");
+    // }
 
-    /// <summary>
-    /// 게임 재개
-    /// </summary>
-    public void ResumeGame()
-    {
-        Time.timeScale = 1f;
-        Debug.Log("[GameManager] Game resumed");
-    }
+    // /// <summary>
+    // /// 게임 재개
+    // /// </summary>
+    // public void ResumeGame()
+    // {
+    //     Time.timeScale = 1f;
+    //     Debug.Log("[GameManager] Game resumed");
+    // }
 
     #endregion
 
@@ -348,72 +348,72 @@ public class GameManager : MonoBehaviour
     /// <summary>
     /// 게임 저장
     /// </summary>
-    public void SaveGame(int slotIndex = 0)
-    {
-        Debug.Log($"[GameManager] Saving game to slot {slotIndex}...");
+    // public void SaveGame(int slotIndex = 0)
+    // {
+    //     Debug.Log($"[GameManager] Saving game to slot {slotIndex}...");
         
-        // 각 매니저에서 데이터 수집
-        var saveData = new GameSaveData
-        {
-            stateData = gameStateManager?.GetSaveData(),
-            timeData = timeManager?.GetSaveData(),
-            actionData = actionPointManager?.GetSaveData(),
-            locationData = locationManager?.GetSaveData(),
-            notebookData = notebookManager?.GetSaveData(),
-            // ... 다른 데이터들
-        };
+    //     // 각 매니저에서 데이터 수집
+    //     var saveData = new GameSaveData
+    //     {
+    //         stateData = gameStateManager?.GetSaveData(),
+    //         timeData = timeManager?.GetSaveData(),
+    //         actionData = actionPointManager?.GetSaveData(),
+    //         locationData = locationManager?.GetSaveData(),
+    //         notebookData = notebookManager?.GetSaveData(),
+    //         // ... 다른 데이터들
+    //     };
 
-        // JSON으로 저장
-        string json = JsonUtility.ToJson(saveData, true);
-        PlayerPrefs.SetString($"SaveSlot_{slotIndex}", json);
-        PlayerPrefs.Save();
+    //     // JSON으로 저장
+    //     string json = JsonUtility.ToJson(saveData, true);
+    //     PlayerPrefs.SetString($"SaveSlot_{slotIndex}", json);
+    //     PlayerPrefs.Save();
 
-        Debug.Log("[GameManager] ✅ Game saved");
-    }
+    //     Debug.Log("[GameManager] ✅ Game saved");
+    // }
 
     /// <summary>
     /// 게임 로드
     /// </summary>
-    public void LoadGame(int slotIndex = 0)
-    {
-        Debug.Log($"[GameManager] Loading game from slot {slotIndex}...");
+    // public void LoadGame(int slotIndex = 0)
+    // {
+    //     Debug.Log($"[GameManager] Loading game from slot {slotIndex}...");
 
-        string json = PlayerPrefs.GetString($"SaveSlot_{slotIndex}", "");
+    //     string json = PlayerPrefs.GetString($"SaveSlot_{slotIndex}", "");
         
-        if (string.IsNullOrEmpty(json))
-        {
-            Debug.LogWarning("[GameManager] No save data found");
-            return;
-        }
+    //     if (string.IsNullOrEmpty(json))
+    //     {
+    //         Debug.LogWarning("[GameManager] No save data found");
+    //         return;
+    //     }
 
-        GameSaveData saveData = JsonUtility.FromJson<GameSaveData>(json);
+    //     GameSaveData saveData = JsonUtility.FromJson<GameSaveData>(json);
 
-        // 각 매니저에 데이터 로드
-        gameStateManager?.LoadSaveData(saveData.stateData);
-        timeManager?.LoadSaveData(saveData.timeData);
-        actionPointManager?.LoadSaveData(saveData.actionData);
-        locationManager?.LoadSaveData(saveData.locationData);
-        notebookManager?.LoadSaveData(saveData.notebookData);
+    //     // 각 매니저에 데이터 로드
+    //     gameStateManager?.LoadSaveData(saveData.stateData);
+    //     timeManager?.LoadSaveData(saveData.timeData);
+    //     actionPointManager?.LoadSaveData(saveData.actionData);
+    //     locationManager?.LoadSaveData(saveData.locationData);
+    //     notebookManager?.LoadSaveData(saveData.notebookData);
 
-        // UI 갱신
-        uiManager?.RefreshAll();
+    //     // UI 갱신
+    //     uiManager?.RefreshAll();
 
-        Debug.Log("[GameManager] ✅ Game loaded");
-    }
+    //     Debug.Log("[GameManager] ✅ Game loaded");
+    // }
 
     #endregion
 
     #region Debug
 
-    public void PrintStatus()
-    {
-        Debug.Log("=== GAME MANAGER STATUS ===");
-        Debug.Log($"Initialized: {isInitialized}");
-        Debug.Log($"GameState: {gameStateManager?.CurrentPhase}");
-        Debug.Log($"Location: {gameStateManager?.CurrentLocation}");
-        Debug.Log($"Time: {timeManager?.GetCurrentTime()}");
-        Debug.Log($"Action Points: {actionPointManager?.GetRemainingPoints()}");
-    }
+    // public void PrintStatus()
+    // {
+    //     Debug.Log("=== GAME MANAGER STATUS ===");
+    //     Debug.Log($"Initialized: {isInitialized}");
+    //     Debug.Log($"GameState: {gameStateManager?.CurrentPhase}");
+    //     Debug.Log($"Location: {gameStateManager?.CurrentLocation}");
+    //     Debug.Log($"Time: {timeManager?.GetCurrentTime()}");
+    //     Debug.Log($"Action Points: {actionPointManager?.GetRemainingPoints()}");
+    // }
 
     #endregion
 }
