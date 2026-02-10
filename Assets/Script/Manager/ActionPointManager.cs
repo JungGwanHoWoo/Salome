@@ -80,10 +80,10 @@ public class ActionPointManager : MonoBehaviour
         if (enableAutoRecovery)
         {
             var timeManager = FindObjectOfType<TimeManager>();
-            if (timeManager != null)
-            {
-                timeManager.OnTimeSlotChanged += HandleTimeSlotChanged;
-            }
+            // if (timeManager != null)
+            // {
+            //     timeManager.OnTimeSlotChanged += HandleTimeSlotChanged;
+            // }
         }
     }
 

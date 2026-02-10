@@ -278,13 +278,6 @@ public class LocationManager : MonoBehaviour
             return false;
         }
 
-        // 시간 제약 확인
-        if (!CheckTimeRestrictions(targetLocation))
-        {
-            reason = GetTimeRestrictionMessage(targetLocation);
-            return false;
-        }
-
         // 필요한 플래그가 있는가?
         if (!CheckRequiredFlags(targetLocation))
         {
@@ -302,38 +295,6 @@ public class LocationManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>
-    /// 시간 제약 확인
-    /// </summary>
-    private bool CheckTimeRestrictions(LocationData location)
-    {
-        if (location.timeRestrictions == null || location.timeRestrictions.Length == 0)
-            return true;
-
-        if (timeManager == null)
-            return true;
-
-        var currentTime = timeManager.CurrentPeriod;
-
-        foreach (var allowedTime in location.timeRestrictions)
-        {
-            if (currentTime == allowedTime)
-                return true;
-        }
-
-        return false;
-    }
-
-    private string GetTimeRestrictionMessage(LocationData location)
-    {
-        if (location.timeRestrictions == null || location.timeRestrictions.Length == 0)
-            return "";
-
-        string times = string.Join(", ", Array.ConvertAll(location.timeRestrictions, 
-            t => timeManager?.GetTimePeriodName(t) ?? t.ToString()));
-
-        return $"이 장소는 {times}에만 갈 수 있습니다.";
-    }
 
     /// <summary>
     /// 필수 플래그 확인

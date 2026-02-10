@@ -185,7 +185,7 @@ public class GameManager : MonoBehaviour
 
         // ✅ null 체크 후 호출
         gameStateManager?.ResetToDefault();
-        timeManager?.ResetTime();
+        // timeManager?.ResetTime();
         actionPointManager?.ResetPoints();
 
         // 시작 위치 지정
@@ -239,21 +239,21 @@ public class GameManager : MonoBehaviour
             return false;
 
         // ✅ 이동 가능 여부 체크
-        if (!gameFlowManager.CanMove(locationID))
-        {
-            Debug.Log($"[GameManager] Cannot move to {locationID}");
-            return false;
-        }
+        // if (!gameFlowManager.CanMove(locationID))
+        // {
+        //     Debug.Log($"[GameManager] Cannot move to {locationID}");
+        //     return false;
+        // }
 
         // 이동 실행
         bool success = locationManager.MoveTo(locationID);
         
-        if (success)
-        {
-            // 행동력 소비
-            gameFlowManager.ConsumeAction(ActionType.Move);
-            Debug.Log($"[GameManager] Moved to {locationID}");
-        }
+        // if (success)
+        // {
+        //     // 행동력 소비
+        //     gameFlowManager.ConsumeAction(ActionType.Move);
+        //     Debug.Log($"[GameManager] Moved to {locationID}");
+        // }
 
         return success;
     }
@@ -276,7 +276,7 @@ public class GameManager : MonoBehaviour
         dialogueManager.StartDialogue(npcID);
         
         // 행동력 소비 (대화 완료 후에 소비하는 게 나을 수도 있음)
-        gameFlowManager.ConsumeAction(ActionType.Talk);
+        // gameFlowManager.ConsumeAction(ActionType.Talk);
         
         Debug.Log($"[GameManager] Started dialogue with {npcID}");
         return true;
@@ -290,20 +290,20 @@ public class GameManager : MonoBehaviour
         if (!CanPerformAction())
             return false;
 
-        if (!gameFlowManager.CanInvestigate(clueID))
-        {
-            Debug.Log($"[GameManager] Cannot investigate {clueID}");
-            return false;
-        }
+        // if (!gameFlowManager.CanInvestigate(clueID))
+        // {
+        //     Debug.Log($"[GameManager] Cannot investigate {clueID}");
+        //     return false;
+        // }
 
         // 단서 획득
         bool success = notebookManager.AddClue(clueID);
         
-        if (success)
-        {
-            gameFlowManager.ConsumeAction(ActionType.Investigate);
-            Debug.Log($"[GameManager] Investigated {clueID}");
-        }
+        // if (success)
+        // {
+        //     gameFlowManager.ConsumeAction(ActionType.Investigate);
+        //     Debug.Log($"[GameManager] Investigated {clueID}");
+        // }
 
         return success;
     }

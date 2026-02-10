@@ -1,56 +1,56 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// TimeManager
-/// - 게임 내 시간 관리 (Morning, Afternoon, Evening, Night)
-/// - 시간 경과에 따른 이벤트 처리
-/// - NPC 스케줄, 환경 변화 등과 연동
+/// TimeManager (관찰 모드 타이머)
+/// - 관찰 모드에서만 작동하는 제한시간 시스템
+/// - 주변 사물을 조사할 때 제한시간 부여
+/// - 시간 내에 단서/호감도 증가 방법 발견 필요
 /// </summary>
 public class TimeManager : MonoBehaviour
 {
     public static TimeManager Instance { get; private set; }
 
-    #region Time Settings
+    #region Timer Settings
 
-    [Header("Time Configuration")]
-    [SerializeField] private int maxTimeSlots = 12;  // 챕터당 최대 시간 슬롯
-    [SerializeField] private bool autoAdvanceTime = true;  // 행동 시 자동 시간 진행
-
-    private int currentTimeSlot;  // 현재 시간 슬롯 (0부터 시작)
-    private GameStateManager.TimeSlot currentPeriod;  // 현재 시간대
+    [Header("Observation Timer Settings")]
+    [SerializeField] private float defaultObservationTime = 60f;  // 기본 관찰 제한시간 (초)
+    [SerializeField] private bool allowTimerPause = true;  // 타이머 일시정지 허용
 
     #endregion
 
-    #region Time State
+    #region Timer State
 
-    public int CurrentTimeSlot => currentTimeSlot;
-    public int MaxTimeSlots => maxTimeSlots;
-    public int RemainingTimeSlots => maxTimeSlots - currentTimeSlot;
-    public GameStateManager.TimeSlot CurrentPeriod => currentPeriod;
-    public bool IsTimeUp => currentTimeSlot >= maxTimeSlots;
-    public float TimeProgress => (float)currentTimeSlot / maxTimeSlots;  // 0~1
+    private bool isTimerRunning = false;
+    private float currentTime = 0f;
+    private float maxTime = 0f;
+    private Coroutine timerCoroutine;
+
+    public bool IsTimerRunning => isTimerRunning;
+    public float CurrentTime => currentTime;
+    public float MaxTime => maxTime;
+    public float RemainingTime => Mathf.Max(0f, currentTime);
+    public float TimeProgress => maxTime > 0 ? (maxTime - currentTime) / maxTime : 0f;  // 0~1
+    public bool IsTimeUp => currentTime <= 0f;
 
     #endregion
 
     #region Events
 
-    public event Action<int> OnTimeSlotChanged;  // 시간 슬롯 변경 (남은 슬롯 수)
-    public event Action<GameStateManager.TimeSlot> OnTimePeriodChanged;  // 시간대 변경
+    public event Action<float> OnTimerStarted;  // 시작 시간
+    public event Action OnTimerEnded;  // 타이머 종료
+    public event Action<float> OnTimerTick;  // 매 프레임 (남은 시간)
+    public event Action<int> OnWarning;  // 경고 (남은 초)
     public event Action OnTimeUp;  // 시간 소진
-    public event Action<int> OnTimeWarning;  // 시간 경고 (남은 슬롯)
 
     #endregion
 
-    #region Time Period Configuration
+    #region Warning Settings
 
-    [Header("Time Period Thresholds")]
-    [SerializeField] [Range(0f, 1f)] private float afternoonThreshold = 0.25f;
-    [SerializeField] [Range(0f, 1f)] private float eveningThreshold = 0.50f;
-    [SerializeField] [Range(0f, 1f)] private float nightThreshold = 0.75f;
-
-    [Header("Warning Settings")]
-    [SerializeField] private int warningThreshold = 3;  // 남은 시간 N칸 이하일 때 경고
+    [Header("Warning Times (초)")]
+    [SerializeField] private int[] warningTimes = new int[] { 30, 10, 5 };
+    private bool[] warningTriggered;
 
     #endregion
 
@@ -73,138 +73,156 @@ public class TimeManager : MonoBehaviour
 
     public void Initialize()
     {
-        ResetTime();
-        Debug.Log("[TimeManager] Initialized");
+        ResetTimer();
+        warningTriggered = new bool[warningTimes.Length];
+        
+        Debug.Log("[TimeManager] Initialized (Observation Timer)");
     }
 
-    /// <summary>
-    /// 시간 초기화 (챕터 시작 시)
-    /// </summary>
-    public void ResetTime()
+    private void ResetTimer()
     {
-        currentTimeSlot = 0;
-        currentPeriod = GameStateManager.TimeSlot.Morning;
+        isTimerRunning = false;
+        currentTime = 0f;
+        maxTime = 0f;
         
-        Debug.Log($"[TimeManager] Time reset: {maxTimeSlots} slots available");
+        if (timerCoroutine != null)
+        {
+            StopCoroutine(timerCoroutine);
+            timerCoroutine = null;
+        }
     }
 
     #endregion
 
     // =========================================================
-    // 🔹 TIME PROGRESSION
+    // 🔹 TIMER CONTROL
     // =========================================================
 
     /// <summary>
-    /// 시간 경과 (1 슬롯 소비)
+    /// 관찰 타이머 시작
     /// </summary>
-    public bool AdvanceTime(int slots = 1)
+    public void StartObservationTimer(float duration = -1f)
     {
-        if (IsTimeUp)
+        // 기본값 사용
+        if (duration <= 0f)
+            duration = defaultObservationTime;
+
+        // 이미 실행 중이면 중지
+        if (timerCoroutine != null)
         {
-            Debug.LogWarning("[TimeManager] Cannot advance time - time is up!");
-            OnTimeUp?.Invoke();
-            return false;
+            StopCoroutine(timerCoroutine);
         }
 
-        int previousSlot = currentTimeSlot;
-        currentTimeSlot += slots;
-        currentTimeSlot = Mathf.Min(currentTimeSlot, maxTimeSlots);
+        // 초기화
+        maxTime = duration;
+        currentTime = duration;
+        isTimerRunning = true;
 
-        // 시간대 업데이트
-        UpdateTimePeriod();
+        // 경고 초기화
+        for (int i = 0; i < warningTriggered.Length; i++)
+        {
+            warningTriggered[i] = false;
+        }
 
         // 이벤트 발생
-        OnTimeSlotChanged?.Invoke(RemainingTimeSlots);
+        OnTimerStarted?.Invoke(duration);
 
-        Debug.Log($"[TimeManager] Time advanced: {previousSlot} → {currentTimeSlot} " +
-                  $"({RemainingTimeSlots} slots remaining)");
+        // 타이머 코루틴 시작
+        timerCoroutine = StartCoroutine(TimerCoroutine());
 
-        // 경고 체크
-        CheckTimeWarning();
-
-        // 시간 소진 체크
-        if (IsTimeUp)
-        {
-            HandleTimeUp();
-        }
-
-        return true;
+        Debug.Log($"[TimeManager] Observation timer started: {duration} seconds");
     }
 
     /// <summary>
-    /// 시간대 업데이트 (진행도에 따라)
+    /// 타이머 중지
     /// </summary>
-    private void UpdateTimePeriod()
+    public void StopTimer()
     {
-        float progress = TimeProgress;
-        GameStateManager.TimeSlot newPeriod;
-
-        if (progress < afternoonThreshold)
-            newPeriod = GameStateManager.TimeSlot.Morning;
-        else if (progress < eveningThreshold)
-            newPeriod = GameStateManager.TimeSlot.Afternoon;
-        else if (progress < nightThreshold)
-            newPeriod = GameStateManager.TimeSlot.Evening;
-        else
-            newPeriod = GameStateManager.TimeSlot.Night;
-
-        if (newPeriod != currentPeriod)
+        if (timerCoroutine != null)
         {
-            GameStateManager.TimeSlot previousPeriod = currentPeriod;
-            currentPeriod = newPeriod;
+            StopCoroutine(timerCoroutine);
+            timerCoroutine = null;
+        }
 
-            OnTimePeriodChanged?.Invoke(currentPeriod);
+        isTimerRunning = false;
+        OnTimerEnded?.Invoke();
 
-            Debug.Log($"[TimeManager] Time period changed: {previousPeriod} → {currentPeriod}");
+        Debug.Log("[TimeManager] Timer stopped");
+    }
 
-            // 시간대 변경에 따른 추가 처리
-            ApplyTimePeriodEffects(currentPeriod);
+    /// <summary>
+    /// 타이머 일시정지
+    /// </summary>
+    public void PauseTimer()
+    {
+        if (!allowTimerPause)
+        {
+            Debug.LogWarning("[TimeManager] Timer pause not allowed");
+            return;
+        }
+
+        if (isTimerRunning)
+        {
+            isTimerRunning = false;
+            Debug.Log("[TimeManager] Timer paused");
         }
     }
 
     /// <summary>
-    /// 시간대 효과 적용
+    /// 타이머 재개
     /// </summary>
-    private void ApplyTimePeriodEffects(GameStateManager.TimeSlot period)
+    public void ResumeTimer()
     {
-        // 시간대에 따른 게임 변화
-        switch (period)
+        if (!isTimerRunning && currentTime > 0f)
         {
-            case GameStateManager.TimeSlot.Morning:
-                // 밝은 조명, 활동적인 NPC들
-                Debug.Log("[TimeManager] Morning effects applied");
-                break;
-
-            case GameStateManager.TimeSlot.Afternoon:
-                // 약간 어두워짐
-                Debug.Log("[TimeManager] Afternoon effects applied");
-                break;
-
-            case GameStateManager.TimeSlot.Evening:
-                // 일부 NPC는 특정 장소로 이동
-                Debug.Log("[TimeManager] Evening effects applied");
-                break;
-
-            case GameStateManager.TimeSlot.Night:
-                // 어두운 조명, 일부 장소 접근 불가/가능
-                Debug.Log("[TimeManager] Night effects applied");
-                break;
+            isTimerRunning = true;
+            Debug.Log("[TimeManager] Timer resumed");
         }
-
-        // 여기서 다른 매니저들에게 알림
-        // LightingManager.SetTimePeriod(period);
-        // NPCScheduleManager.UpdateSchedules(period);
     }
 
     /// <summary>
-    /// 시간 경고 체크
+    /// 타이머 코루틴
     /// </summary>
-    private void CheckTimeWarning()
+    private IEnumerator TimerCoroutine()
     {
-        if (RemainingTimeSlots <= warningThreshold && RemainingTimeSlots > 0)
+        while (currentTime > 0f)
         {
-            OnTimeWarning?.Invoke(RemainingTimeSlots);
-            Debug.LogWarning($"[TimeManager] ⚠️ Time warning: {RemainingTimeSlots} slots remaining!");
+            if (isTimerRunning)
+            {
+                currentTime -= Time.deltaTime;
+                
+                // 틱 이벤트
+                OnTimerTick?.Invoke(currentTime);
+
+                // 경고 체크
+                CheckWarnings();
+
+                // 시간 소진 체크
+                if (currentTime <= 0f)
+                {
+                    currentTime = 0f;
+                    HandleTimeUp();
+                    yield break;
+                }
+            }
+
+            yield return null;
+        }
+    }
+
+    /// <summary>
+    /// 경고 체크
+    /// </summary>
+    private void CheckWarnings()
+    {
+        for (int i = 0; i < warningTimes.Length; i++)
+        {
+            if (!warningTriggered[i] && currentTime <= warningTimes[i] && currentTime > warningTimes[i] - 1f)
+            {
+                warningTriggered[i] = true;
+                OnWarning?.Invoke(warningTimes[i]);
+                Debug.LogWarning($"[TimeManager] Warning: {warningTimes[i]} seconds remaining!");
+            }
         }
     }
 
@@ -213,16 +231,28 @@ public class TimeManager : MonoBehaviour
     /// </summary>
     private void HandleTimeUp()
     {
-        Debug.LogWarning("[TimeManager] ⏰ TIME UP!");
+        isTimerRunning = false;
         OnTimeUp?.Invoke();
 
-        // GameStateManager와 연동
+        Debug.LogWarning("[TimeManager] ⏰ Time's up!");
+
+        // 관찰 모드 강제 종료
+        EndObservationMode();
+    }
+
+    /// <summary>
+    /// 관찰 모드 종료
+    /// </summary>
+    private void EndObservationMode()
+    {
+        // GameStateManager로 페이즈 전환
         var gameState = FindObjectOfType<GameStateManager>();
         if (gameState != null)
         {
-            // 엔딩으로 전환하거나 챕터 종료
-            // gameState.SetPhase(GameStateManager.GamePhase.Ending);
+            gameState.SetPhase(GameStateManager.GamePhase.Exploration);
         }
+
+        Debug.Log("[TimeManager] Observation mode ended");
     }
 
     // =========================================================
@@ -230,66 +260,43 @@ public class TimeManager : MonoBehaviour
     // =========================================================
 
     /// <summary>
-    /// 시간 되돌리기 (특수 아이템 등)
-    /// </summary>
-    public void RewindTime(int slots)
-    {
-        if (slots <= 0) return;
-
-        int previousSlot = currentTimeSlot;
-        currentTimeSlot = Mathf.Max(0, currentTimeSlot - slots);
-
-        UpdateTimePeriod();
-        OnTimeSlotChanged?.Invoke(RemainingTimeSlots);
-
-        Debug.Log($"[TimeManager] Time rewound: {previousSlot} → {currentTimeSlot} " +
-                  $"(+{slots} slots recovered)");
-    }
-
-    /// <summary>
     /// 시간 추가 (보너스)
     /// </summary>
-    public void AddTimeSlots(int slots)
+    public void AddTime(float seconds)
     {
-        if (slots <= 0) return;
+        if (seconds <= 0f) return;
 
-        maxTimeSlots += slots;
-        OnTimeSlotChanged?.Invoke(RemainingTimeSlots);
+        currentTime += seconds;
+        currentTime = Mathf.Min(currentTime, maxTime);  // 최대 시간 초과 방지
 
-        Debug.Log($"[TimeManager] Time slots added: +{slots} (Total: {maxTimeSlots})");
+        Debug.Log($"[TimeManager] Time added: +{seconds}s (Current: {currentTime:F1}s)");
     }
 
     /// <summary>
-    /// 특정 시간대로 강제 변경 (컷신 등)
+    /// 시간 감소 (페널티)
     /// </summary>
-    public void SetTimePeriod(GameStateManager.TimeSlot period)
+    public void ReduceTime(float seconds)
     {
-        if (currentPeriod == period) return;
+        if (seconds <= 0f) return;
 
-        GameStateManager.TimeSlot previousPeriod = currentPeriod;
-        currentPeriod = period;
+        currentTime -= seconds;
+        currentTime = Mathf.Max(0f, currentTime);
 
-        OnTimePeriodChanged?.Invoke(currentPeriod);
+        Debug.Log($"[TimeManager] Time reduced: -{seconds}s (Current: {currentTime:F1}s)");
 
-        Debug.Log($"[TimeManager] Time period forced: {previousPeriod} → {currentPeriod}");
-
-        ApplyTimePeriodEffects(currentPeriod);
+        if (currentTime <= 0f)
+        {
+            HandleTimeUp();
+        }
     }
 
     /// <summary>
-    /// 특정 시간 슬롯으로 설정 (디버그/치트)
+    /// 시간 배율 조정 (슬로우 모션 등)
     /// </summary>
-    public void SetTimeSlot(int slot)
+    public void SetTimeScale(float scale)
     {
-        slot = Mathf.Clamp(slot, 0, maxTimeSlots);
-        
-        if (currentTimeSlot == slot) return;
-
-        currentTimeSlot = slot;
-        UpdateTimePeriod();
-        OnTimeSlotChanged?.Invoke(RemainingTimeSlots);
-
-        Debug.Log($"[TimeManager] Time slot set to: {currentTimeSlot}");
+        Time.timeScale = scale;
+        Debug.Log($"[TimeManager] Time scale set to {scale}");
     }
 
     // =========================================================
@@ -297,51 +304,28 @@ public class TimeManager : MonoBehaviour
     // =========================================================
 
     /// <summary>
-    /// 현재 시간대인지 확인
+    /// 남은 시간 문자열
     /// </summary>
-    public bool IsTimePeriod(GameStateManager.TimeSlot period)
+    public string GetRemainingTimeString()
     {
-        return currentPeriod == period;
+        int minutes = Mathf.FloorToInt(currentTime / 60f);
+        int seconds = Mathf.FloorToInt(currentTime % 60f);
+        return $"{minutes:00}:{seconds:00}";
     }
 
     /// <summary>
-    /// 충분한 시간이 남았는지
+    /// 시간 색상 (UI용)
     /// </summary>
-    public bool HasEnoughTime(int requiredSlots)
+    public Color GetTimeColor()
     {
-        return RemainingTimeSlots >= requiredSlots;
-    }
-
-    /// <summary>
-    /// 현재 시간 정보 문자열
-    /// </summary>
-    public string GetCurrentTimeString()
-    {
-        return $"{GetTimePeriodName(currentPeriod)} ({currentTimeSlot}/{maxTimeSlots})";
-    }
-
-    /// <summary>
-    /// 시간대 이름
-    /// </summary>
-    public string GetTimePeriodName(GameStateManager.TimeSlot period)
-    {
-        switch (period)
-        {
-            case GameStateManager.TimeSlot.Morning:   return "아침";
-            case GameStateManager.TimeSlot.Afternoon: return "오후";
-            case GameStateManager.TimeSlot.Evening:   return "저녁";
-            case GameStateManager.TimeSlot.Night:     return "밤";
-            default: return "알 수 없음";
-        }
-    }
-
-    /// <summary>
-    /// 남은 시간 퍼센트 (0~100)
-    /// </summary>
-    public float GetRemainingTimePercent()
-    {
-        if (maxTimeSlots <= 0) return 0f;
-        return ((float)RemainingTimeSlots / maxTimeSlots) * 100f;
+        float percent = currentTime / maxTime;
+        
+        if (percent > 0.5f)
+            return Color.green;
+        else if (percent > 0.25f)
+            return Color.yellow;
+        else
+            return Color.red;
     }
 
     // =========================================================
@@ -351,18 +335,18 @@ public class TimeManager : MonoBehaviour
     [System.Serializable]
     public class TimeSaveData
     {
-        public int currentTimeSlot;
-        public int maxTimeSlots;
-        public GameStateManager.TimeSlot currentPeriod;
+        public float currentTime;
+        public float maxTime;
+        public bool isTimerRunning;
     }
 
     public TimeSaveData GetSaveData()
     {
         return new TimeSaveData
         {
-            currentTimeSlot = this.currentTimeSlot,
-            maxTimeSlots = this.maxTimeSlots,
-            currentPeriod = this.currentPeriod
+            currentTime = this.currentTime,
+            maxTime = this.maxTime,
+            isTimerRunning = this.isTimerRunning
         };
     }
 
@@ -374,13 +358,15 @@ public class TimeManager : MonoBehaviour
             return;
         }
 
-        currentTimeSlot = data.currentTimeSlot;
-        maxTimeSlots = data.maxTimeSlots;
-        currentPeriod = data.currentPeriod;
-
-        // 이벤트 발생
-        OnTimeSlotChanged?.Invoke(RemainingTimeSlots);
-        OnTimePeriodChanged?.Invoke(currentPeriod);
+        currentTime = data.currentTime;
+        maxTime = data.maxTime;
+        
+        if (data.isTimerRunning && currentTime > 0f)
+        {
+            // 타이머 재시작
+            isTimerRunning = true;
+            timerCoroutine = StartCoroutine(TimerCoroutine());
+        }
 
         Debug.Log("[TimeManager] Save data loaded");
     }
@@ -392,36 +378,30 @@ public class TimeManager : MonoBehaviour
     public void PrintStatus()
     {
         Debug.Log("=== TIME MANAGER STATUS ===");
-        Debug.Log($"Current Time: {GetCurrentTimeString()}");
-        Debug.Log($"Time Period: {currentPeriod}");
+        Debug.Log($"Timer Running: {isTimerRunning}");
+        Debug.Log($"Current Time: {currentTime:F2}s");
+        Debug.Log($"Max Time: {maxTime:F2}s");
+        Debug.Log($"Remaining: {GetRemainingTimeString()}");
         Debug.Log($"Progress: {TimeProgress * 100:F1}%");
-        Debug.Log($"Remaining: {RemainingTimeSlots} / {maxTimeSlots} slots");
-        Debug.Log($"Time Up: {IsTimeUp}");
     }
 
     #if UNITY_EDITOR
-    [ContextMenu("Advance Time (1 slot)")]
-    private void DebugAdvanceTime()
+    [ContextMenu("Start Test Timer (60s)")]
+    private void DebugStartTimer()
     {
-        AdvanceTime(1);
+        StartObservationTimer(60f);
     }
 
-    [ContextMenu("Rewind Time (1 slot)")]
-    private void DebugRewindTime()
+    [ContextMenu("Stop Timer")]
+    private void DebugStopTimer()
     {
-        RewindTime(1);
+        StopTimer();
     }
 
-    [ContextMenu("Set Morning")]
-    private void DebugSetMorning()
+    [ContextMenu("Add 10 seconds")]
+    private void DebugAddTime()
     {
-        SetTimePeriod(GameStateManager.TimeSlot.Morning);
-    }
-
-    [ContextMenu("Set Night")]
-    private void DebugSetNight()
-    {
-        SetTimePeriod(GameStateManager.TimeSlot.Night);
+        AddTime(10f);
     }
 
     [ContextMenu("Print Status")]

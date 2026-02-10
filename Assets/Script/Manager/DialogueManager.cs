@@ -553,7 +553,7 @@ public class DialogueManager : MonoBehaviour
         if (node.conditions.requiredTimeSlot != null)
         {
             var timeManager = FindObjectOfType<TimeManager>();
-            if (timeManager != null && timeManager.CurrentPeriod != node.conditions.requiredTimeSlot)
+            if (timeManager != null)
                 return false;
         }
 

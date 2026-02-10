@@ -161,13 +161,13 @@ public class UIManager : MonoBehaviour
         }
 
         // TimeManager
-        if (timeManager != null)
-        {
-            timeManager.OnTimeSlotChanged += HandleTimeSlotChanged;
-            timeManager.OnTimePeriodChanged += HandleTimePeriodChanged;
-            timeManager.OnTimeWarning += HandleTimeWarning;
-            timeManager.OnTimeUp += HandleTimeUp;
-        }
+        // if (timeManager != null)
+        // {
+        //     timeManager.OnTimeSlotChanged += HandleTimeSlotChanged;
+        //     timeManager.OnTimePeriodChanged += HandleTimePeriodChanged;
+        //     timeManager.OnTimeWarning += HandleTimeWarning;
+        //     timeManager.OnTimeUp += HandleTimeUp;
+        // }
 
         // ActionPointManager
         if (actionPointManager != null)
@@ -262,51 +262,51 @@ public class UIManager : MonoBehaviour
     /// </summary>
     public void RefreshAll()
     {
-        UpdateTimeDisplay();
+        // UpdateTimeDisplay();
         UpdateAPDisplay();
         UpdateLocationDisplay();
         UpdateChapterDisplay();
     }
 
-    /// <summary>
-    /// 시간 표시 갱신
-    /// </summary>
-    private void UpdateTimeDisplay()
-    {
-        if (timeManager == null) return;
+    // /// <summary>
+    // /// 시간 표시 갱신
+    // /// </summary>
+    // private void UpdateTimeDisplay()
+    // {
+    //     if (timeManager == null) return;
 
-        // 시간 텍스트
-        if (timeText != null)
-        {
-            timeText.text = $"{timeManager.CurrentTimeSlot} / {timeManager.MaxTimeSlots}";
-        }
+    //     // 시간 텍스트
+    //     if (timeText != null)
+    //     {
+    //         timeText.text = $"{timeManager.CurrentTimeSlot} / {timeManager.MaxTimeSlots}";
+    //     }
 
-        // 시간 프로그레스 바
-        if (timeProgressBar != null)
-        {
-            timeProgressBar.value = timeManager.TimeProgress;
+    //     // 시간 프로그레스 바
+    //     if (timeProgressBar != null)
+    //     {
+    //         timeProgressBar.value = timeManager.TimeProgress;
             
-            // 경고 색상
-            if (timeManager.RemainingTimeSlots <= 3)
-            {
-                timeProgressBar.fillRect.GetComponent<Image>().color = Color.red;
-            }
-            else if (timeManager.RemainingTimeSlots <= 5)
-            {
-                timeProgressBar.fillRect.GetComponent<Image>().color = Color.yellow;
-            }
-            else
-            {
-                timeProgressBar.fillRect.GetComponent<Image>().color = Color.green;
-            }
-        }
+    //         // 경고 색상
+    //         if (timeManager.RemainingTimeSlots <= 3)
+    //         {
+    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.red;
+    //         }
+    //         else if (timeManager.RemainingTimeSlots <= 5)
+    //         {
+    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.yellow;
+    //         }
+    //         else
+    //         {
+    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.green;
+    //         }
+    //     }
 
-        // 시간대 텍스트
-        if (timePeriodText != null)
-        {
-            timePeriodText.text = timeManager.GetTimePeriodName(timeManager.CurrentPeriod);
-        }
-    }
+    //     // 시간대 텍스트
+    //     if (timePeriodText != null)
+    //     {
+    //         timePeriodText.text = timeManager.GetTimePeriodName(timeManager.CurrentPeriod);
+    //     }
+    // }
 
     /// <summary>
     /// AP 표시 갱신
@@ -720,18 +720,18 @@ public class UIManager : MonoBehaviour
         UpdateLocationDisplay();
     }
 
-    private void HandleTimeSlotChanged(int remainingSlots)
-    {
-        UpdateTimeDisplay();
-    }
+    // private void HandleTimeSlotChanged(int remainingSlots)
+    // {
+    //     UpdateTimeDisplay();
+    // }
 
-    private void HandleTimePeriodChanged(GameStateManager.TimeSlot newPeriod)
-    {
-        UpdateTimeDisplay();
+    // private void HandleTimePeriodChanged(GameStateManager.TimeSlot newPeriod)
+    // {
+    //     UpdateTimeDisplay();
         
-        string periodName = timeManager.GetTimePeriodName(newPeriod);
-        ShowNotification($"시간대: {periodName}", NotificationType.Info);
-    }
+    //     string periodName = timeManager.GetTimePeriodName(newPeriod);
+    //     ShowNotification($"시간대: {periodName}", NotificationType.Info);
+    // }
 
     private void HandleTimeWarning(int remainingSlots)
     {
