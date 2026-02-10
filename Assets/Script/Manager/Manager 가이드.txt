@@ -1,0 +1,913 @@
+게임 매니저 시스템 가이드
+📚 목차
+
+시스템 개요
+전체 아키텍처
+GameManager (총괄 관리자)
+    ↓
+    ├─ GameStateManager (게임 상태)
+    ├─ GameFlowManager (게임 흐름)
+    ├─ TimeManager (시간 관리)
+    ├─ ActionPointManager (행동력 관리)
+    ├─ LocationManager (장소 관리)
+    ├─ DialogueManager (대화 시스템)
+    ├─ NotebookManager (수첩/추리)
+    └─ UIManager (UI 총괄)
+
+매니저 간 의존성 관계
+GameManager
+    ↓ 참조
+    ├─ GameStateManager ←─────┐
+    ├─ TimeManager               │
+    ├─ ActionPointManager     │
+    │                         │
+    ├─ GameFlowManager ───────┘ (상태 확인)
+    │   ↓ 사용
+    ├─ LocationManager
+    ├─ DialogueManager
+    ├─ NotebookManager
+    │
+    └─ UIManager ←──────────── (모든 매니저 이벤트 구독)
+
+
+매니저별 상세 설명
+1️⃣ GameManager (게임 총괄)
+역할:
+모든 매니저의 생성 및 초기화
+매니저 간 통신 중재
+게임 전체 흐름 제어 (시작/재시작/저장/불러오기)
+주요 기능:
+StartGame()              // 게임 시작
+RestartGame()            // 게임 재시작
+RequestMove(locationID)  // 이동 요청
+RequestDialogue(npcID)   // 대화 요청
+RequestInvestigation(clueID) // 조사 요청
+SaveGame(slotIndex)      // 저장
+LoadGame(slotIndex)      // 불러오기
+
+정적 접근자:
+GameManager.State        // GameStateManager
+GameManager.Flow         // GameFlowManager
+GameManager.Time         // TimeManager
+GameManager.ActionPoints // ActionPointManager
+GameManager.Location     // LocationManager
+GameManager.Dialogue     // DialogueManager
+GameManager.Notebook     // NotebookManager
+GameManager.UI           // UIManager
+
+
+2️⃣ GameStateManager (게임 상태)
+역할:
+현재 게임 페이즈 관리 (Title/Exploration/Dialogue/Investigation/Cutscene/Ending)
+챕터 진행 관리 (Prologue/Spring/Summer/Autumn/Winter/Finale)
+시간대 관리 (Morning/Afternoon/Evening/Night)
+전역 플래그 시스템
+위치 추적
+핵심 데이터:
+CurrentPhase      // 현재 페이즈
+CurrentChapter    // 현재 챕터
+CurrentTimeSlot   // 현재 시간대
+CurrentLocation   // 현재 위치
+
+플래그 시스템:
+AddFlag("found_knife")           // 플래그 추가
+HasFlag("found_knife")           // 플래그 확인
+RemoveFlag("temporary_event")    // 플래그 제거
+
+사용 예시:
+// 특정 플래그가 있을 때만 이벤트 발생
+if (GameStateManager.Instance.HasFlag("talked_to_butler"))
+{
+    // 집사와 대화한 후에만 가능한 행동
+}
+
+// 챕터별 분기
+if (GameStateManager.Instance.CurrentChapter == GameStateManager.Chapter.Spring)
+{
+    // Spring 챕터 전용 이벤트
+}
+
+// 시간대별 분기
+if (GameStateManager.Instance.CurrentTimeSlot == GameStateManager.TimeSlot.Night)
+{
+    // 밤에만 발생하는 이벤트
+}
+
+
+3️⃣ TimeManager (시간 관리)
+역할:
+탐사 제한시간 관리 (슬롯 기반)
+시간대 자동 변경 (진행도에 따라 Morning → Afternoon → Evening → Night)
+시간 경고 시스템
+핵심 개념:
+12칸의 시간 슬롯 (챕터당)
+0~2칸   → Morning   (0~25%)
+3~5칸   → Afternoon (25~50%)
+6~8칸   → Evening   (50~75%)
+9~12칸  → Night     (75~100%)
+
+주요 메서드:
+AdvanceTime(1)           // 시간 1칸 소비
+RewindTime(3)            // 시간 3칸 회복 (특수 아이템)
+AddTimeSlots(5)          // 최대 시간 5칸 추가
+HasEnoughTime(2)         // 2칸 이상 남았는지 확인
+
+이벤트:
+OnTimeSlotChanged        // 시간 경과 시
+OnTimePeriodChanged      // 시간대 변경 시 (조명/BGM 변경)
+OnTimeWarning            // 남은 시간 3칸 이하
+OnTimeUp                 // 시간 소진
+
+
+4️⃣ ActionPointManager (행동력 관리)
+역할:
+행동력(AP) 관리
+행동 비용 계산
+자동 회복 시스템 (옵션)
+행동별 비용:
+이동: 1 AP
+대화: 2 AP
+조사: 1 AP
+휴식: 0 AP (시간만 소비, AP 회복)
+
+주요 메서드:
+ConsumePoints(2)         // 2 AP 소비
+RecoverPoints(5)         // 5 AP 회복
+Rest()                   // 휴식 (5 AP 회복)
+FullRecover()            // 완전 회복
+HasEnoughPoints(3)       // 3 AP 이상 있는지
+
+상태 체크:
+IsEmpty      // AP = 0
+IsLow        // AP <= 5
+IsCritical   // AP <= 2
+APPercent    // 0.0~1.0 (UI 바용)
+
+이벤트:
+OnActionPointsChanged    // AP 변경
+OnActionPointsLow        // AP 부족 경고
+OnActionPointsCritical   // AP 위험 수준
+OnActionPointsZero       // AP 소진
+
+
+5️⃣ LocationManager (장소 관리)
+역할:
+게임 내 모든 장소 관리
+이동 가능 여부 판단 (시간 제약, 플래그 조건, 챕터 제약)
+장소별 NPC/단서 관리
+장소 잠금/해금 시스템
+LocationData 구조:
+locationID              // "Library"
+locationName            // "서재"
+description             // 장소 설명
+moveCost               // 이동 비용 (AP)
+isInitiallyUnlocked    // 시작부터 해금?
+
+// 제약 조건
+timeRestrictions       // 특정 시간대만 (예: 정원은 낮만)
+requiredFlags          // 필요 플래그 (예: 비밀방은 열쇠 필요)
+chapterRestrictions    // 특정 챕터만
+
+// 콘텐츠
+npcsPresent            // 이 장소의 NPC들
+cluesAvailable         // 이 장소의 단서들
+
+// 이벤트
+onEnterEvent           // 진입 시 이벤트
+onFirstVisitEvent      // 첫 방문 시 이벤트
+
+// 연출
+bgmName                // 배경음악
+backgroundImage        // 배경 이미지
+
+주요 메서드:
+MoveTo(locationID)              // 장소 이동
+CanMoveTo(locationID, out reason) // 이동 가능? + 이유
+UnlockLocation(locationID)      // 장소 해금
+GetAvailableLocations()         // 현재 이동 가능한 장소들
+GetNPCsInCurrentLocation()      // 현재 장소 NPC
+GetCluesInCurrentLocation()     // 현재 장소 미발견 단서
+
+사용 예시:
+// 조건부 장소 접근
+if (LocationManager.Instance.CanMoveTo("Garden", out string reason))
+{
+    // 이동 가능
+}
+else
+{
+    ShowMessage(reason); // "이 장소는 아침, 오후에만 갈 수 있습니다."
+}
+
+// 단서 발견으로 장소 해금
+if (GameStateManager.Instance.HasFlag("found_secret_map"))
+{
+    LocationManager.Instance.UnlockLocation("SecretPassage");
+}
+
+
+6️⃣ DialogueManager (대화 시스템)
+역할:
+NPC 대화 처리
+노드 기반 대화 트리
+선택지 시스템
+조건부 대화
+구조:
+NPCDialogueData (NPC별)
+└─ DialogueNode[] (대화 노드들)
+   ├─ DialogueLine[] (대사들)
+   ├─ DialogueChoice[] (선택지들)
+   └─ nextNodeID (다음 노드)
+
+DialogueNode 예시:
+{
+    nodeID = "start",
+    
+    conditions = {
+        requiredFlags = ["met_before"],      // 조건
+        requiredTimeSlot = TimeSlot.Night    // 밤에만
+    },
+    
+    lines = [
+        { speakerName = "집사", text = "어서 오십시오." },
+        { speakerName = "집사", text = "무엇을 도와드릴까요?" }
+    ],
+    
+    choices = [
+        {
+            choiceText = "사건에 대해 물어본다",
+            requiredFlags = ["heard_about_case"], // 이 선택지를 보려면
+            nextNodeID = "about_case"
+        },
+        {
+            choiceText = "대화를 마친다",
+            nextNodeID = "" // 빈 문자열 = 대화 종료
+        }
+    ]
+}
+
+주요 메서드:
+StartDialogue(npcID, nodeID)    // 대화 시작
+AdvanceDialogue()               // 다음 대사
+SelectChoice(choiceIndex)       // 선택지 선택
+EndDialogue()                   // 대화 종료
+
+사용 예시:
+// NPC 클릭 시
+void OnButlerClicked()
+{
+    if (GameFlowManager.Instance.CanTalk("Butler"))
+    {
+        DialogueManager.Instance.StartDialogue("Butler");
+    }
+}
+
+// 대화 중 플래그 설정
+{
+    lines = [
+        {
+            text = "사실은... 비밀의 방이 있습니다.",
+            flagToSet = "learned_secret_room" // 이 대사 후 플래그 설정
+        }
+    ]
+}
+
+// 조건부 선택지
+{
+    choices = [
+        {
+            choiceText = "[증거 제시] 피 묻은 칼을 보여준다",
+            requiredFlags = ["found_bloody_knife"], // 단서 있을 때만 표시
+            flagToSet = "confronted_with_evidence",
+            affinityChange = -10, // 호감도 변화
+            nextNodeID = "shocked_response"
+        }
+    ]
+}
+
+
+7️⃣ NotebookManager (수첩/추리)
+역할:
+단서 수집 및 정리
+인물 정보 관리
+추리 시스템
+인물 관계도
+진행도 추적
+4대 기능:
+1. Clues (단서)
+   - 증거물, 문서, 증언 등 수집
+   - 카테고리별, 중요도별 분류
+   
+2. Characters (인물)
+   - 만난 인물 정보 기록
+   - 알리바이, 의심도 관리
+   
+3. Deductions (추리)
+   - 자동 추리 (특정 단서 조합 시)
+   - 수동 추리 (플레이어가 직접)
+   
+4. Relations (관계도)
+   - 인물 간 관계 추적
+
+ClueData 구조:
+clueID              // "bloody_knife"
+clueName            // "피 묻은 칼"
+description         // 상세 설명
+category            // Evidence/Document/Testimony...
+importance          // Critical/Important/Minor
+relatedChapter      // 관련 챕터
+locationFound       // 발견 장소
+hint                // 힌트
+clueImage           // 이미지
+relatedClues        // 관련 단서들
+relatedCharacters   // 관련 인물들
+
+주요 메서드:
+// 단서
+AddClue(clueID)                      // 단서 추가
+HasClue(clueID)                      // 단서 소유?
+GetDiscoveredClues()                 // 발견한 모든 단서
+GetCluesByCategory(category)         // 카테고리별
+GetCluesByImportance(importance)     // 중요도별
+
+// 인물
+MeetCharacter(characterID)           // 인물 등록
+GetMetCharacters()                   // 만난 인물들
+SetCharacterRelation(c1, c2, rel)    // 관계 설정
+
+// 추리
+MakeDeduction(clues[], text, flag)   // 추리 시도
+GetAllDeductions()                   // 추리 기록
+OpenDeductionMode()                  // 추리 모드
+
+// 진행도
+GetCompletionProgress()              // 전체 진행도 0~1
+GetMissingCriticalClues()            // 누락 핵심 단서
+GetHint()                            // 힌트
+
+자동 추리 예시:
+// NotebookManager 내부
+private void CheckAutoDeductions(string newClueID)
+{
+    // 특정 조합 감지
+    if (HasClue("bloody_knife") && HasClue("kitchen_access_log"))
+    {
+        MakeDeduction(
+            new[] { "bloody_knife", "kitchen_access_log" },
+            "칼은 주방에서 나왔고, 주방장만 접근했다. 주방장을 의심해야겠다.",
+            "deduction_suspect_chef"
+        );
+    }
+}
+
+수동 추리 예시:
+// 플레이어가 UI에서 단서 선택
+var result = NotebookManager.Instance.MakeDeduction(
+    new[] { "bloody_knife", "torn_letter", "maid_testimony" },
+    "범인은 피해자와 개인적인 원한이 있던 사람이다!",
+    "deduction_personal_grudge"
+);
+
+if (result.success)
+{
+    // 추리 성공 → 새 장소 해금
+    LocationManager.Instance.UnlockLocation("SecretRoom");
+}
+else
+{
+    // 실패 → 부족한 단서 표시
+    foreach (var missing in result.missingClues)
+    {
+        ShowMessage($"필요한 단서: {missing}");
+    }
+}
+
+
+8️⃣ GameFlowManager (게임 흐름)
+역할:
+행동 가능 여부 종합 판단
+행동 소비 처리 (AP + 시간)
+챕터 진행 조건 체크
+엔딩 결정
+행동 가능 여부 체크:
+CanMove(locationID)       // 이동 가능?
+CanTalk(npcID)           // 대화 가능?
+CanInvestigate(clueID)   // 조사 가능?
+
+체크 항목:
+✅ 현재 Phase (Cutscene/Ending에서는 불가)
+✅ AP 충분?
+✅ 시간 남음?
+✅ 이미 수행했나? (중복 방지)
+✅ 특수 조건 (플래그, 챕터 등)
+행동 소비:
+ConsumeAction(ActionType.Move)
+// → ActionPointManager.ConsumePoints(1)
+// → TimeManager.AdvanceTime(1)
+// → CheckChapterCompletion()
+
+ChapterConfig:
+{
+    chapter = Chapter.Spring,
+    requiredClues = ["spring_clue_1", "spring_clue_2"], // 필수 단서
+    minActionsRequired = 5  // 최소 행동 횟수
+}
+
+엔딩 결정:
+private EndingType DetermineEnding()
+{
+    bool foundAllTruths = HasFlag("revealed_all_truths");
+    bool savedNPC = HasFlag("saved_npc");
+    bool correctCulprit = HasFlag("correct_culprit");
+    
+    if (foundAllTruths && savedNPC && correctCulprit)
+        return EndingType.TrueEnding;
+    else if (correctCulprit)
+        return EndingType.GoodEnding;
+    else if (foundAllTruths)
+        return EndingType.NormalEnding;
+    else
+        return EndingType.BadEnding;
+}
+
+
+9️⃣ UIManager (UI 총괄)
+역할:
+모든 UI 패널 관리
+HUD 실시간 갱신
+알림 시스템
+팝업 대화상자
+로딩 화면
+페이드 효과
+패널 관리:
+ShowPanel(UIPanel.Notebook)      // 패널 표시
+HidePanel(UIPanel.Dialogue)      // 패널 숨김
+TogglePanel(UIPanel.PauseMenu)   // 토글
+
+HUD 갱신:
+RefreshAll()              // 모든 HUD 갱신
+UpdateTimeDisplay()       // 시간 표시
+UpdateAPDisplay()         // AP 표시
+UpdateLocationDisplay()   // 위치 표시
+UpdateChapterDisplay()    // 챕터 표시
+
+알림:
+ShowNotification("단서 발견!", NotificationType.Info)
+ShowNotification("추리 성공!", NotificationType.Success)
+ShowNotification("시간 부족!", NotificationType.Warning)
+ShowNotification("실패!", NotificationType.Error)
+
+팝업:
+ShowPopup(
+    "단서 발견",
+    "피 묻은 칼을 발견했습니다!",
+    onConfirm: () => NotebookManager.Instance.OpenDeductionMode()
+);
+
+페이드:
+yield return FadeOut();           // 페이드 아웃
+yield return FadeIn();            // 페이드 인
+yield return FadeTransition(      // 페이드 전환
+    onFaded: () => MoveTo("Library")
+);
+
+자동 이벤트 처리: UIManager는 모든 매니저의 이벤트를 구독하여 자동으로 UI 갱신
+TimeManager.OnTimeWarning → "⚠️ 시간 부족" 알림
+ActionPointManager.OnActionPointsLow → "⚠️ AP 부족" 알림
+NotebookManager.OnClueDiscovered → "새 단서 발견!" 알림
+등등...
+
+Unity 프로젝트 세팅
+1단계: 씬 구성
+Hierarchy:
+├─ _GameManagers (빈 GameObject)
+│  ├─ GameManager
+│  ├─ GameStateManager
+│  ├─ GameFlowManager
+│  ├─ TimeManager
+│  ├─ ActionPointManager
+│  ├─ LocationManager
+│  ├─ DialogueManager
+│  ├─ NotebookManager
+│  └─ UIManager
+│
+├─ Canvas (UI)
+│  ├─ HUD
+│  ├─ Notebook
+│  ├─ Dialogue
+│  ├─ PauseMenu
+│  ├─ Popup
+│  ├─ Notification Container
+│  ├─ Loading
+│  └─ Fade
+│
+└─ Game World
+   ├─ Locations
+   ├─ NPCs
+   └─ Interactables
+
+2단계: 스크립트 할당
+GameManager에 할당: 모든 매니저는 자동으로 FindObjectOfType으로 찾으므로 Inspector 할당 불필요!
+UIManager에 할당:
+UIManager:
+├─ Main Panels
+│  ├─ HUD Panel → (Canvas/HUD 드래그)
+│  ├─ Notebook Panel → (Canvas/Notebook 드래그)
+│  ├─ Dialogue Panel → (Canvas/Dialogue 드래그)
+│  ├─ Pause Menu Panel → (Canvas/PauseMenu 드래그)
+│  └─ Popup Panel → (Canvas/Popup 드래그)
+│
+├─ HUD Elements
+│  ├─ Time Text → (HUD/TimeText 드래그)
+│  ├─ Time Progress Bar → (HUD/TimeBar 드래그)
+│  ├─ AP Text → (HUD/APText 드래그)
+│  ├─ AP Bar → (HUD/APBar 드래그)
+│  ├─ Location Text → (HUD/LocationText 드래그)
+│  └─ Chapter Text → (HUD/ChapterText 드래그)
+│
+└─ Notification System
+   ├─ Notification Prefab → (Prefabs/NotificationItem)
+   └─ Notification Container → (Canvas/NotificationContainer)
+
+3단계: ScriptableObject 생성
+ClueDatabase 생성:
+Project 창에서 우클릭
+Create → ScriptableObject → ClueDatabase
+이름: "ClueDatabase"
+Inspector에서 단서들 추가
+ClueDatabase:
+└─ Clues (Array)
+   ├─ [0]
+   │  ├─ Clue ID: "bloody_knife"
+   │  ├─ Clue Name: "피 묻은 칼"
+   │  ├─ Description: "주방에서 발견..."
+   │  ├─ Category: Evidence
+   │  ├─ Importance: Critical
+   │  ├─ Location Found: "주방"
+   │  └─ Clue Image: (Sprite 할당)
+   │
+   └─ [1]
+      └─ ...
+
+CharacterDatabase 생성:
+CharacterDatabase:
+└─ Characters (Array)
+   ├─ [0]
+   │  ├─ Character ID: "Butler"
+   │  ├─ Character Name: "집사 제임스"
+   │  ├─ Age: 58
+   │  ├─ Occupation: "집사"
+   │  ├─ Portrait: (Sprite 할당)
+   │  └─ Role: Suspect
+   │
+   └─ [1]
+      └─ ...
+
+DialogueDatabase 생성:
+DialogueDatabase:
+└─ NPC Dialogues (Array)
+   ├─ [0] Butler
+   │  ├─ NPC ID: "Butler"
+   │  ├─ NPC Name: "집사"
+   │  └─ Dialogue Nodes
+   │     ├─ [0] start
+   │     │  ├─ Node ID: "start"
+   │     │  ├─ Lines (Array)
+   │     │  │  ├─ [0] "어서 오십시오..."
+   │     │  │  └─ [1] "무엇을..."
+   │     │  └─ Choices (Array)
+   │     │     ├─ [0] "사건에 대해"
+   │     │     └─ [1] "대화 종료"
+   │     └─ [1] about_case
+   │        └─ ...
+   │
+   └─ [1] Detective
+      └─ ...
+
+LocationManager에 데이터 입력:
+LocationManager:
+└─ Location Database (Array)
+   ├─ [0] MainHall
+   │  ├─ Location ID: "MainHall"
+   │  ├─ Location Name: "메인 홀"
+   │  ├─ Is Initially Unlocked: ✓
+   │  ├─ Move Cost: 0
+   │  ├─ NPCs Present: [Butler, Maid]
+   │  └─ BGM Name: "MainHall_Theme"
+   │
+   ├─ [1] Library
+   │  ├─ Location ID: "Library"
+   │  ├─ Move Cost: 1
+   │  └─ Clues Available: [old_newspaper]
+   │
+   └─ [2] SecretRoom
+      ├─ Location ID: "SecretRoom"
+      ├─ Is Initially Unlocked: ✗
+      ├─ Required Flags: [found_secret_key]
+      └─ ...
+
+4단계: 데이터베이스 할당
+NotebookManager:
+NotebookManager:
+├─ Clue Database → (ClueDatabase 드래그)
+└─ Character Database → (CharacterDatabase 드래그)
+
+DialogueManager:
+DialogueManager:
+└─ Dialogue Database → (DialogueDatabase 드래그)
+
+5단계: 초기값 설정
+TimeManager:
+TimeManager:
+├─ Max Time Slots: 12
+├─ Auto Advance Time: ✓
+├─ Warning Threshold: 3
+├─ Afternoon Threshold: 0.25
+├─ Evening Threshold: 0.50
+└─ Night Threshold: 0.75
+
+ActionPointManager:
+ActionPointManager:
+├─ Max Action Points: 20
+├─ Starting Action Points: 20
+├─ Enable Auto Recovery: ✗
+├─ Rest Recovery Amount: 5
+├─ Low AP Warning: 5
+└─ Critical AP Threshold: 2
+
+GameFlowManager:
+GameFlowManager:
+├─ Move Cost: 1
+├─ Talk Cost: 2
+├─ Investigate Cost: 1
+└─ Chapter Configs (Array)
+   ├─ [0] Spring
+   │  ├─ Chapter: Spring
+   │  ├─ Required Clues: [spring_clue_1, spring_clue_2]
+   │  └─ Min Actions: 5
+   └─ ...
+
+
+매니저 간 상호작용
+플레이어가 "서재로 이동" 버튼 클릭 시
+1. UI 버튼 클릭
+   ↓
+2. GameManager.RequestMove("Library")
+   ↓
+3. GameFlowManager.CanMove("Library")?
+   ├─ GameStateManager.CurrentPhase 확인
+   ├─ ActionPointManager.HasEnoughPoints(1) 확인
+   ├─ TimeManager.HasEnoughTime(1) 확인
+   └─ LocationManager.CanMoveTo("Library") 확인
+   ↓ (모두 OK)
+4. LocationManager.MoveTo("Library")
+   ├─ currentLocation = Library
+   ├─ visitedLocations.Add("Library")
+   └─ OnLocationChanged 이벤트
+   ↓
+5. GameFlowManager.ConsumeAction(ActionType.Move)
+   ├─ ActionPointManager.ConsumePoints(1)
+   │  └─ OnActionPointsChanged 이벤트
+   └─ TimeManager.AdvanceTime(1)
+      ├─ currentTimeSlot++
+      ├─ UpdateTimePeriod() (필요시)
+      └─ OnTimeSlotChanged 이벤트
+   ↓
+6. UI 자동 갱신
+   ├─ UIManager.HandleLocationChanged()
+   │  └─ locationText.text = "서재"
+   ├─ UIManager.HandleTimeSlotChanged()
+   │  └─ timeBar.value = 업데이트
+   └─ UIManager.HandleAPChanged()
+      └─ apBar.value = 업데이트
+   ↓
+7. UIManager.ShowNotification("서재에 도착했습니다.")
+
+플레이어가 단서 발견 시
+1. 플레이어가 조사 가능한 오브젝트 클릭
+   ↓
+2. GameManager.RequestInvestigation("bloody_knife")
+   ↓
+3. GameFlowManager.CanInvestigate("bloody_knife")?
+   ├─ 행동력 체크
+   ├─ 시간 체크
+   └─ 이미 조사했는지 체크
+   ↓ (OK)
+4. NotebookManager.AddClue("bloody_knife")
+   ├─ discoveredClues.Add("bloody_knife")
+   ├─ GameStateManager.AddFlag("clue_bloody_knife")
+   ├─ OnClueDiscovered 이벤트
+   └─ CheckAutoDeductions("bloody_knife")
+      ↓
+      만약 HasClue("bloody_knife") && HasClue("kitchen_log"):
+      └─ MakeDeduction(...)
+         ├─ deductions.Add(...)
+         ├─ GameStateManager.AddFlag("deduction_suspect_chef")
+         └─ OnDeductionMade 이벤트
+   ↓
+5. GameFlowManager.ConsumeAction(ActionType.Investigate)
+   ├─ AP 소비
+   └─ 시간 소비
+   ↓
+6. UI 반응
+   ├─ UIManager.ShowNotification("새 단서: 피 묻은 칼")
+   ├─ UIManager.ShowPopup("단서 발견!", "피 묻은 칼을...")
+   └─ 수첩 아이콘에 알림 배지 표시
+
+플레이어가 NPC와 대화 시
+1. NPC 클릭
+   ↓
+2. GameManager.RequestDialogue("Butler")
+   ↓
+3. GameFlowManager.CanTalk("Butler")?
+   ├─ 이미 대화했는지: talked_to_Butler_Spring 플래그 확인
+   ├─ AP 충분? (2 필요)
+   └─ 시간 충분?
+   ↓ (OK)
+4. DialogueManager.StartDialogue("Butler", "start")
+   ├─ 대화 노드 찾기
+   ├─ 조건 체크 (requiredFlags, timeSlot 등)
+   ├─ currentNode = start
+   ├─ GameStateManager.SetPhase(GamePhase.Dialogue)
+   ├─ OnDialogueStarted 이벤트
+   └─ DisplayCurrentLine()
+   ↓
+5. UI 전환
+   ├─ UIManager.HandlePhaseChanged(Dialogue)
+   │  ├─ HideHUD()
+   │  └─ ShowPanel(UIPanel.Dialogue)
+   └─ DialogueUI.DisplayDialogueLine(...)
+      └─ 타자기 효과로 대사 표시
+   ↓
+6. 플레이어가 Space 입력
+   ↓
+7. DialogueManager.AdvanceDialogue()
+   ├─ currentLineIndex++
+   └─ 모든 대사 읽음?
+      ├─ Yes → PresentChoices()
+      │  └─ OnChoicesPresented 이벤트
+      └─ No → DisplayCurrentLine()
+   ↓
+8. 플레이어가 선택지 선택
+   ↓
+9. DialogueManager.SelectChoice(choiceIndex)
+   ├─ ApplyChoiceEffects()
+   │  └─ GameStateManager.AddFlag(...)
+   └─ TransitionToNode(nextNodeID)
+   ↓
+10. 대화 종료 시
+   ├─ DialogueManager.EndDialogue()
+   ├─ GameStateManager.SetPhase(GamePhase.Exploration)
+   ├─ GameFlowManager.ConsumeAction(ActionType.Talk)
+   └─ UI 복원
+
+
+실전 게임 플로우
+게임 시작부터 챕터 완료까지
+=== 게임 시작 ===
+1. GameManager.StartGame()
+   ├─ GameStateManager.ResetToDefault()
+   │  ├─ CurrentPhase = Exploration
+   │  ├─ CurrentChapter = Prologue
+   │  └─ CurrentLocation = "MainHall"
+   ├─ TimeManager.ResetTime()
+   │  └─ remainingTimeActions = 12
+   ├─ ActionPointManager.ResetPoints()
+   │  └─ currentActionPoints = 20
+   └─ UIManager.RefreshAll()
+
+=== 플레이어 행동 ===
+2. 플레이어: 서재로 이동
+   ├─ AP: 20 → 19
+   ├─ Time: 0 → 1 (Morning)
+   └─ Location: MainHall → Library
+
+3. 플레이어: 서재 조사 → "피 묻은 칼" 발견
+   ├─ AP: 19 → 18
+   ├─ Time: 1 → 2 (Morning)
+   └─ Notebook: 단서 추가
+
+4. 플레이어: 주방으로 이동
+   ├─ AP: 18 → 17
+   ├─ Time: 2 → 3 (Afternoon 시작)
+   └─ Location: Library → Kitchen
+
+5. 플레이어: 주방장과 대화
+   ├─ AP: 17 → 15
+   ├─ Time: 3 → 4 (Afternoon)
+   └─ Dialogue: 정보 획득
+
+6. 플레이어: "주방 출입 기록" 발견
+   ├─ AP: 15 → 14
+   ├─ Time: 4 → 5 (Afternoon)
+   └─ Notebook: 자동 추리 발동!
+      → "주방장을 의심해야겠다"
+
+=== 챕터 진행 ===
+7. GameFlowManager.CheckChapterCompletion()
+   ├─ Spring 챕터 필수 단서 체크
+   │  ├─ spring_clue_1 ✓
+   │  └─ spring_clue_2 ✓
+   ├─ OnChapterCompleted 이벤트
+   └─ UIManager.ShowNotification("Spring 챕터 완료!")
+
+8. 플레이어: "다음 챕터" 버튼 클릭
+   └─ GameFlowManager.AdvanceToNextChapter()
+      ├─ 페이드 아웃
+      ├─ GameStateManager.AdvanceChapter()
+      │  ├─ CurrentChapter = Summer
+      │  └─ TimeManager.ResetTime() (시간 12칸으로 리셋)
+      ├─ 페이드 인
+      └─ UIManager.ShowNotification("Summer 챕터 시작!")
+
+=== 게임 계속 ===
+9. 반복...
+
+추리 시스템 플로우
+=== 수동 추리 ===
+1. 플레이어: Tab 키로 수첩 열기
+   └─ UIManager.TogglePanel(UIPanel.Notebook)
+
+2. 플레이어: "추리" 탭 클릭
+   └─ NotebookUI.SwitchTab(NotebookTab.Deductions)
+
+3. 플레이어: "새 추리하기" 버튼
+   └─ NotebookManager.OpenDeductionMode()
+      └─ DeductionPanel 표시
+
+4. 플레이어: 단서 3개 선택
+   ├─ bloody_knife
+   ├─ torn_letter
+   └─ maid_testimony
+
+5. 플레이어: 추리 텍스트 입력 후 제출
+   └─ NotebookManager.MakeDeduction(
+      ["bloody_knife", "torn_letter", "maid_testimony"],
+      "범인은 피해자와 원한이 있던 사람이다!",
+      "deduction_personal_grudge"
+   )
+
+6. NotebookManager 처리
+   ├─ 모든 단서 보유? ✓
+   ├─ deductions.Add(...)
+   ├─ GameStateManager.AddFlag("deduction_personal_grudge")
+   └─ OnDeductionMade 이벤트
+
+7. UI 피드백
+   ├─ UIManager.ShowNotification("추리 성공!")
+   ├─ UIManager.ShowPopup("추리 성공!", "...")
+   └─ 결과 처리
+      └─ LocationManager.UnlockLocation("SecretRoom")
+
+=== 자동 추리 ===
+(플레이어가 특정 단서를 발견하는 순간)
+
+1. NotebookManager.AddClue("kitchen_access_log")
+   ↓
+2. CheckAutoDeductions("kitchen_access_log")
+   ↓
+3. 조건 체크:
+   HasClue("bloody_knife") ✓
+   HasClue("kitchen_access_log") ✓
+   ↓
+4. MakeDeduction(...)
+   └─ "주방장을 의심해야겠다"
+   ↓
+5. UIManager.ShowNotification("새로운 추리가 떠올랐습니다!")
+
+
+문제 해결 가이드
+Q1: 매니저를 찾을 수 없다는 에러
+[GameManager] GameStateManager not found!
+
+해결:
+씬에 해당 매니저 GameObject가 있는지 확인
+매니저 스크립트가 GameObject에 부착되어 있는지 확인
+Q2: UI가 업데이트되지 않음
+해결:
+UIManager의 Inspector에서 UI 요소들이 제대로 할당되었는지 확인
+UIManager.RefreshAll() 수동 호출해보기
+Q3: 대화가 시작되지 않음
+해결:
+DialogueDatabase가 DialogueManager에 할당되었는지 확인
+NPC ID가 정확한지 확인
+대화 조건(requiredFlags 등)이 충족되었는지 확인
+Q4: 단서가 추가되지 않음
+해결:
+ClueDatabase가 NotebookManager에 할당되었는지 확인
+Clue ID가 정확한지 확인
+Q5: 장소 이동이 안 됨
+해결:
+LocationManager의 Location Database에 해당 장소가 있는지 확인
+장소가 해금(Unlocked)되어 있는지 확인
+시간 제약이나 플래그 조건 확인
+Q6: 시간이나 AP가 소비되지 않음
+해결:
+GameFlowManager가 제대로 초기화되었는지 확인
+ConsumeAction()이 호출되고 있는지 확인
+
+마치며
+이 시스템은 모듈화와 이벤트 기반으로 설계되어 있어:
+✅ 확장이 쉬움: 새로운 매니저 추가 간편 ✅ 유지보수 용이: 각 매니저가 독립적 ✅ 디버깅 편리: 각 매니저별로 로그 확인 가능 ✅ 재사용 가능: 다른 프로젝트에도 적용 가능
+핵심은 GameManager가 총괄하고, 각 매니저는 자기 역할에만 집중하는 것입니다!
+
