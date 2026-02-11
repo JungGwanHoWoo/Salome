@@ -2051,7 +2051,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 199ae69d5c1409448a91e0095dd9e0aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GeminiManager
-  apiKey: AIzaSyD0tBDKyl202INHwjAzXXky_jy0JThBnAc
+  apiKey: AIzaSyDe9ErgB2ypvhqY-72JVzBDz79E__i0VSc
 --- !u!4 &1311516959
 Transform:
   m_ObjectHideFlags: 0
