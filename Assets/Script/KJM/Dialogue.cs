@@ -11,7 +11,7 @@ public class Dialogue : MonoBehaviour
     public TMP_InputField playerInput;
     public GameObject dialoguePanel;
 
-    private NPCData currentNPC; // 현재 대화 중인 NPC
+    private NPCData currentNPC;
     private bool isWaitingForInput = false;
 
     void Awake()
@@ -33,28 +33,54 @@ public class Dialogue : MonoBehaviour
         playerInput.onSubmit.AddListener(OnPlayerSubmit);
     }
 
-    // NPC 클릭 시 호출 (NPCData를 받음)
-    public void StartDialogue(NPCData npcData)
+    // NPC 클릭 시 호출 (isFirstMeet으로 첫 대화 여부 판단)
+    public void StartDialogue(NPCData npcData, bool isFirstMeet)
     {
         currentNPC = npcData;
-
         dialoguePanel.SetActive(true);
-        aiText.gameObject.SetActive(true);
-        playerInput.gameObject.SetActive(false);
 
-        aiText.StartTyping(currentNPC.firstLine);
-        isWaitingForInput = true;
-
-        Debug.Log($"[DialogueManager] {currentNPC.npcName}과의 대화 시작");
+        if (isFirstMeet)
+        {
+            // 첫 대화: firstLine 출력
+            aiText.gameObject.SetActive(true);
+            playerInput.gameObject.SetActive(false);
+            aiText.StartTyping(currentNPC.firstLine);
+            isWaitingForInput = true;
+            Debug.Log($"[Dialogue] {currentNPC.npcName}과의 첫 대화 시작");
+        }
+        else
+        {
+            // 재대화: 바로 입력창
+            aiText.gameObject.SetActive(false);
+            playerInput.gameObject.SetActive(true);
+            playerInput.text = "";
+            playerInput.ActivateInputField();
+            isWaitingForInput = false;
+            Debug.Log($"[Dialogue] {currentNPC.npcName}과의 재대화 시작");
+        }
     }
 
     void Update()
     {
+        // 엔터 → 입력창 표시
         if (aiText.gameObject.activeInHierarchy && isWaitingForInput && aiText.IsFinished)
         {
             if (Keyboard.current != null && Keyboard.current.enterKey.wasPressedThisFrame)
             {
                 ShowInputField();
+            }
+        }
+
+        // ESC → 대화 종료
+        if (dialoguePanel.activeInHierarchy)
+        {
+            // NPC 타이핑이 끝났을 때 OR InputField가 활성화되어 있을 때
+            bool canClose = (aiText.gameObject.activeInHierarchy && aiText.IsFinished) ||
+                            playerInput.gameObject.activeInHierarchy;
+
+            if (canClose && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                EndDialogue();
             }
         }
     }
@@ -78,17 +104,25 @@ public class Dialogue : MonoBehaviour
         string josa = HasFinalConsonant(currentNPC.npcName) ? "이" : "가";
         aiText.StartTyping($"{currentNPC.npcName}{josa} 답변을 생각 중입니다...");
 
-        GeminiManager.Instance.AskGemini(userText, currentNPC.npcPrompt, (aiResponse) =>
-        {
-            aiText.StartTyping(aiResponse);
-            isWaitingForInput = true;
-        }, currentNPC.npcId);
+        GeminiManager.Instance.AskGemini(
+            userText,
+            currentNPC.npcPrompt,
+            (aiResponse) =>
+            {
+                aiText.StartTyping(aiResponse);
+                isWaitingForInput = true;
+            },
+            currentNPC.npcId
+        );
     }
 
     // 대화 종료
     public void EndDialogue()
     {
+        Debug.Log($"[Dialogue] 대화 종료");
         dialoguePanel.SetActive(false);
+        aiText.gameObject.SetActive(false);
+        playerInput.gameObject.SetActive(false);
         currentNPC = null;
         isWaitingForInput = false;
     }
