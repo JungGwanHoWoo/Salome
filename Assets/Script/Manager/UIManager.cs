@@ -3,9 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
+using UnityEngine.InputSystem;  // TextMeshPro 추가
 
 /// <summary>
-/// UIManager
+/// UIManager (TextMeshPro 지원)
 /// - 모든 UI 요소의 중앙 관리
 /// - UI 표시/숨김 제어
 /// - HUD 업데이트
@@ -25,17 +27,17 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject dialoguePanel;
     [SerializeField] private GameObject investigationPanel;
 
-    [Header("HUD Elements")]
-    [SerializeField] private Text timeText;
+    [Header("HUD Elements - TextMeshPro")]
+    [SerializeField] private TextMeshProUGUI timeText;
     [SerializeField] private Slider timeProgressBar;
-    [SerializeField] private Text timePeriodText;
-    
-    [SerializeField] private Text apText;
+    [SerializeField] private TextMeshProUGUI timePeriodText;
+
+    [SerializeField] private TextMeshProUGUI apText;
     [SerializeField] private Slider apBar;
     [SerializeField] private Image apBarFill;
-    
-    [SerializeField] private Text locationText;
-    [SerializeField] private Text chapterText;
+
+    [SerializeField] private TextMeshProUGUI locationText;
+    [SerializeField] private TextMeshProUGUI chapterText;
 
     [Header("Notification System")]
     [SerializeField] private GameObject notificationPrefab;
@@ -44,15 +46,15 @@ public class UIManager : MonoBehaviour
 
     [Header("Popup System")]
     [SerializeField] private GameObject popupPanel;
-    [SerializeField] private Text popupTitleText;
-    [SerializeField] private Text popupMessageText;
+    [SerializeField] private TextMeshProUGUI popupTitleText;
+    [SerializeField] private TextMeshProUGUI popupMessageText;
     [SerializeField] private Button popupConfirmButton;
     [SerializeField] private Button popupCancelButton;
 
     [Header("Loading Screen")]
     [SerializeField] private GameObject loadingPanel;
     [SerializeField] private Slider loadingProgressBar;
-    [SerializeField] private Text loadingText;
+    [SerializeField] private TextMeshProUGUI loadingText;
 
     [Header("Fade")]
     [SerializeField] private Image fadeImage;
@@ -67,9 +69,9 @@ public class UIManager : MonoBehaviour
     private bool isShowingNotification = false;
     private Action currentPopupCallback;
 
-    public bool IsAnyPanelOpen => pauseMenuPanel.activeSelf || 
-                                   settingsPanel.activeSelf || 
-                                   notebookPanel.activeSelf;
+    public bool IsAnyPanelOpen => pauseMenuPanel != null && pauseMenuPanel.activeSelf ||
+                                   settingsPanel != null && settingsPanel.activeSelf ||
+                                   notebookPanel != null && notebookPanel.activeSelf;
 
     #endregion
 
@@ -115,7 +117,7 @@ public class UIManager : MonoBehaviour
     public void Initialize()
     {
         notificationQueue = new Queue<NotificationData>();
-        
+
         // 초기 상태 설정
         HideAllPanels();
         ShowHUD();
@@ -134,7 +136,7 @@ public class UIManager : MonoBehaviour
     private void InitializePanels()
     {
         uiPanels = new Dictionary<UIPanel, GameObject>();
-        
+
         if (hudPanel != null) uiPanels[UIPanel.HUD] = hudPanel;
         if (pauseMenuPanel != null) uiPanels[UIPanel.PauseMenu] = pauseMenuPanel;
         if (settingsPanel != null) uiPanels[UIPanel.Settings] = settingsPanel;
@@ -145,7 +147,7 @@ public class UIManager : MonoBehaviour
         // 팝업 버튼 설정
         if (popupConfirmButton != null)
             popupConfirmButton.onClick.AddListener(OnPopupConfirm);
-        
+
         if (popupCancelButton != null)
             popupCancelButton.onClick.AddListener(OnPopupCancel);
     }
@@ -161,13 +163,12 @@ public class UIManager : MonoBehaviour
         }
 
         // TimeManager
-        // if (timeManager != null)
-        // {
-        //     timeManager.OnTimeSlotChanged += HandleTimeSlotChanged;
-        //     timeManager.OnTimePeriodChanged += HandleTimePeriodChanged;
-        //     timeManager.OnTimeWarning += HandleTimeWarning;
-        //     timeManager.OnTimeUp += HandleTimeUp;
-        // }
+        if (timeManager != null)
+        {
+            timeManager.OnTimerTick += HandleTimerTick;
+            timeManager.OnWarning += HandleTimeWarning;
+            timeManager.OnTimeUp += HandleTimeUp;
+        }
 
         // ActionPointManager
         if (actionPointManager != null)
@@ -180,7 +181,7 @@ public class UIManager : MonoBehaviour
         // LocationManager
         if (locationManager != null)
         {
-            locationManager.OnLocationChanged += HandleLocationChanged;
+            locationManager.OnLocationChanged += HandleLocationChangedData;
         }
     }
 
@@ -190,9 +191,6 @@ public class UIManager : MonoBehaviour
     // 🔹 PANEL MANAGEMENT
     // =========================================================
 
-    /// <summary>
-    /// 패널 표시
-    /// </summary>
     public void ShowPanel(UIPanel panel)
     {
         if (uiPanels.TryGetValue(panel, out var panelObj))
@@ -202,9 +200,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 패널 숨김
-    /// </summary>
     public void HidePanel(UIPanel panel)
     {
         if (uiPanels.TryGetValue(panel, out var panelObj))
@@ -214,9 +209,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 패널 토글
-    /// </summary>
     public void TogglePanel(UIPanel panel)
     {
         if (uiPanels.TryGetValue(panel, out var panelObj))
@@ -225,9 +217,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 모든 패널 숨김
-    /// </summary>
     public void HideAllPanels()
     {
         foreach (var panel in uiPanels.Values)
@@ -237,80 +226,59 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// HUD 표시
-    /// </summary>
     public void ShowHUD()
     {
         ShowPanel(UIPanel.HUD);
     }
 
-    /// <summary>
-    /// HUD 숨김
-    /// </summary>
     public void HideHUD()
     {
         HidePanel(UIPanel.HUD);
     }
 
     // =========================================================
-    // 🔹 HUD UPDATE
+    // 🔹 HUD UPDATE (TextMeshPro)
     // =========================================================
 
-    /// <summary>
-    /// 모든 HUD 요소 갱신
-    /// </summary>
     public void RefreshAll()
     {
-        // UpdateTimeDisplay();
+        UpdateTimeDisplay();
         UpdateAPDisplay();
         UpdateLocationDisplay();
         UpdateChapterDisplay();
     }
 
-    // /// <summary>
-    // /// 시간 표시 갱신
-    // /// </summary>
-    // private void UpdateTimeDisplay()
-    // {
-    //     if (timeManager == null) return;
+    private void UpdateTimeDisplay()
+    {
+        if (timeManager == null) return;
 
-    //     // 시간 텍스트
-    //     if (timeText != null)
-    //     {
-    //         timeText.text = $"{timeManager.CurrentTimeSlot} / {timeManager.MaxTimeSlots}";
-    //     }
+        // 시간 텍스트
+        if (timeText != null)
+        {
+            if (timeManager.IsTimerRunning)
+            {
+                timeText.text = timeManager.GetRemainingTimeString();
+            }
+            else
+            {
+                timeText.text = "--:--";
+            }
+        }
 
-    //     // 시간 프로그레스 바
-    //     if (timeProgressBar != null)
-    //     {
-    //         timeProgressBar.value = timeManager.TimeProgress;
-            
-    //         // 경고 색상
-    //         if (timeManager.RemainingTimeSlots <= 3)
-    //         {
-    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.red;
-    //         }
-    //         else if (timeManager.RemainingTimeSlots <= 5)
-    //         {
-    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.yellow;
-    //         }
-    //         else
-    //         {
-    //             timeProgressBar.fillRect.GetComponent<Image>().color = Color.green;
-    //         }
-    //     }
+        // 시간 프로그레스 바
+        if (timeProgressBar != null && timeManager.IsTimerRunning)
+        {
+            timeProgressBar.value = 1f - timeManager.TimeProgress;
 
-    //     // 시간대 텍스트
-    //     if (timePeriodText != null)
-    //     {
-    //         timePeriodText.text = timeManager.GetTimePeriodName(timeManager.CurrentPeriod);
-    //     }
-    // }
+            // 경고 색상
+            Image fillImage = timeProgressBar.fillRect?.GetComponent<Image>();
+            if (fillImage != null)
+            {
+                fillImage.color = timeManager.GetTimeColor();
+            }
+        }
+    }
 
-    /// <summary>
-    /// AP 표시 갱신
-    /// </summary>
     private void UpdateAPDisplay()
     {
         if (actionPointManager == null) return;
@@ -334,9 +302,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 위치 표시 갱신
-    /// </summary>
     private void UpdateLocationDisplay()
     {
         if (locationManager == null) return;
@@ -347,9 +312,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 챕터 표시 갱신
-    /// </summary>
     private void UpdateChapterDisplay()
     {
         if (gameStateManager == null) return;
@@ -365,22 +327,18 @@ public class UIManager : MonoBehaviour
         switch (chapter)
         {
             case GameStateManager.Chapter.Prologue: return "서막";
-            case GameStateManager.Chapter.Spring: return "봄";
-            case GameStateManager.Chapter.Summer: return "여름";
-            case GameStateManager.Chapter.Autumn: return "가을";
-            case GameStateManager.Chapter.Winter: return "겨울";
+            case GameStateManager.Chapter.Chapther1: return "1장";
+            case GameStateManager.Chapter.Chapther2: return "2장";
+            case GameStateManager.Chapter.Chapther3: return "3장";
             case GameStateManager.Chapter.Finale: return "최종장";
             default: return "???";
         }
     }
 
     // =========================================================
-    // 🔹 NOTIFICATION SYSTEM
+    // 🔹 NOTIFICATION SYSTEM (TextMeshPro)
     // =========================================================
 
-    /// <summary>
-    /// 알림 표시
-    /// </summary>
     public void ShowNotification(string message, NotificationType type = NotificationType.Info)
     {
         var notification = new NotificationData
@@ -421,9 +379,9 @@ public class UIManager : MonoBehaviour
 
         // 알림 생성
         GameObject notifObj = Instantiate(notificationPrefab, notificationContainer);
-        
-        // 텍스트 설정
-        Text notifText = notifObj.GetComponentInChildren<Text>();
+
+        // TextMeshPro 텍스트 설정
+        TextMeshProUGUI notifText = notifObj.GetComponentInChildren<TextMeshProUGUI>();
         if (notifText != null)
         {
             notifText.text = notification.message;
@@ -492,25 +450,22 @@ public class UIManager : MonoBehaviour
         switch (type)
         {
             case NotificationType.Info:
-                return new Color(0.2f, 0.6f, 1f, 0.9f);  // 파랑
+                return new Color(0.2f, 0.6f, 1f, 0.9f);
             case NotificationType.Success:
-                return new Color(0.2f, 0.8f, 0.2f, 0.9f);  // 초록
+                return new Color(0.2f, 0.8f, 0.2f, 0.9f);
             case NotificationType.Warning:
-                return new Color(1f, 0.8f, 0.2f, 0.9f);  // 노랑
+                return new Color(1f, 0.8f, 0.2f, 0.9f);
             case NotificationType.Error:
-                return new Color(1f, 0.3f, 0.3f, 0.9f);  // 빨강
+                return new Color(1f, 0.3f, 0.3f, 0.9f);
             default:
                 return Color.white;
         }
     }
 
     // =========================================================
-    // 🔹 POPUP SYSTEM
+    // 🔹 POPUP SYSTEM (TextMeshPro)
     // =========================================================
 
-    /// <summary>
-    /// 팝업 표시
-    /// </summary>
     public void ShowPopup(string title, string message, Action onConfirm = null, Action onCancel = null)
     {
         if (popupPanel == null)
@@ -522,7 +477,7 @@ public class UIManager : MonoBehaviour
         // 팝업 내용 설정
         if (popupTitleText != null)
             popupTitleText.text = title;
-        
+
         if (popupMessageText != null)
             popupMessageText.text = message;
 
@@ -558,17 +513,14 @@ public class UIManager : MonoBehaviour
         {
             popupPanel.SetActive(false);
         }
-        
+
         currentPopupCallback = null;
     }
 
     // =========================================================
-    // 🔹 LOADING SCREEN
+    // 🔹 LOADING SCREEN (TextMeshPro)
     // =========================================================
 
-    /// <summary>
-    /// 로딩 화면 표시
-    /// </summary>
     public void ShowLoading(string message = "로딩 중...")
     {
         if (loadingPanel != null)
@@ -587,9 +539,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 로딩 진행도 업데이트
-    /// </summary>
     public void UpdateLoadingProgress(float progress)
     {
         if (loadingProgressBar != null)
@@ -598,9 +547,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 로딩 화면 숨김
-    /// </summary>
     public void HideLoading()
     {
         if (loadingPanel != null)
@@ -613,9 +559,6 @@ public class UIManager : MonoBehaviour
     // 🔹 FADE EFFECTS
     // =========================================================
 
-    /// <summary>
-    /// 페이드 아웃
-    /// </summary>
     public IEnumerator FadeOut(float duration = -1f)
     {
         if (duration < 0f) duration = fadeDuration;
@@ -623,7 +566,7 @@ public class UIManager : MonoBehaviour
         if (fadeImage != null)
         {
             fadeImage.gameObject.SetActive(true);
-            
+
             Color color = fadeImage.color;
             float elapsed = 0f;
 
@@ -640,9 +583,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 페이드 인
-    /// </summary>
     public IEnumerator FadeIn(float duration = -1f)
     {
         if (duration < 0f) duration = fadeDuration;
@@ -666,9 +606,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 페이드 전환 (Out → In)
-    /// </summary>
     public IEnumerator FadeTransition(Action onFaded = null)
     {
         yield return StartCoroutine(FadeOut());
@@ -715,27 +652,19 @@ public class UIManager : MonoBehaviour
         UpdateLocationDisplay();
     }
 
-    private void HandleLocationChanged(LocationData previous, LocationData current)
+    private void HandleLocationChangedData(LocationData previous, LocationData current)
     {
         UpdateLocationDisplay();
     }
 
-    // private void HandleTimeSlotChanged(int remainingSlots)
-    // {
-    //     UpdateTimeDisplay();
-    // }
-
-    // private void HandleTimePeriodChanged(GameStateManager.TimeSlot newPeriod)
-    // {
-    //     UpdateTimeDisplay();
-        
-    //     string periodName = timeManager.GetTimePeriodName(newPeriod);
-    //     ShowNotification($"시간대: {periodName}", NotificationType.Info);
-    // }
-
-    private void HandleTimeWarning(int remainingSlots)
+    private void HandleTimerTick(float remainingTime)
     {
-        ShowNotification($"⚠️ 시간이 얼마 남지 않았습니다! ({remainingSlots}칸)", 
+        UpdateTimeDisplay();
+    }
+
+    private void HandleTimeWarning(int remainingSeconds)
+    {
+        ShowNotification($"⚠️ 시간이 얼마 남지 않았습니다! ({remainingSeconds}초)",
                         NotificationType.Warning);
     }
 
@@ -766,7 +695,7 @@ public class UIManager : MonoBehaviour
     private void HandleInput()
     {
         // ESC - 일시정지 메뉴
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             if (pauseMenuPanel != null && !pauseMenuPanel.activeSelf)
             {
@@ -778,10 +707,22 @@ public class UIManager : MonoBehaviour
             }
         }
 
+
         // Tab - 수첩
-        if (Input.GetKeyDown(KeyCode.Tab))
+        if (Keyboard.current.tabKey.wasPressedThisFrame)
         {
             TogglePanel(UIPanel.Notebook);
+        }
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            if (pauseMenuPanel != null && !pauseMenuPanel.activeSelf)
+            {
+                ShowPauseMenu();
+            }
+            else if (pauseMenuPanel != null && pauseMenuPanel.activeSelf)
+            {
+                HidePauseMenu();
+            }
         }
     }
 
@@ -794,7 +735,7 @@ public class UIManager : MonoBehaviour
         if (pauseMenuPanel != null)
         {
             pauseMenuPanel.SetActive(true);
-            Time.timeScale = 0f;  // 게임 일시정지
+            Time.timeScale = 0f;
         }
     }
 
@@ -803,7 +744,7 @@ public class UIManager : MonoBehaviour
         if (pauseMenuPanel != null)
         {
             pauseMenuPanel.SetActive(false);
-            Time.timeScale = 1f;  // 게임 재개
+            Time.timeScale = 1f;
         }
     }
 
@@ -825,7 +766,6 @@ public class UIManager : MonoBehaviour
             onConfirm: () =>
             {
                 Time.timeScale = 1f;
-                // SceneManager.LoadScene("MainMenu");
                 Debug.Log("Return to main menu");
             }
         );
@@ -838,11 +778,11 @@ public class UIManager : MonoBehaviour
             "게임을 종료하시겠습니까?",
             onConfirm: () =>
             {
-                #if UNITY_EDITOR
+#if UNITY_EDITOR
                 UnityEditor.EditorApplication.isPlaying = false;
-                #else
+#else
                 Application.Quit();
-                #endif
+#endif
             }
         );
     }
@@ -859,7 +799,7 @@ public class UIManager : MonoBehaviour
         Debug.Log($"Notification Queue: {notificationQueue?.Count ?? 0}");
     }
 
-    #if UNITY_EDITOR
+#if UNITY_EDITOR
     [ContextMenu("Show Test Notification")]
     private void DebugShowNotification()
     {
@@ -869,7 +809,7 @@ public class UIManager : MonoBehaviour
     [ContextMenu("Show Test Popup")]
     private void DebugShowPopup()
     {
-        ShowPopup("테스트", "팝업 테스트입니다.", 
+        ShowPopup("테스트", "팝업 테스트입니다.",
                  onConfirm: () => Debug.Log("Confirmed"));
     }
 
@@ -878,16 +818,13 @@ public class UIManager : MonoBehaviour
     {
         RefreshAll();
     }
-    #endif
+#endif
 }
 
 // =========================================================
 // 📦 DATA STRUCTURES
 // =========================================================
 
-/// <summary>
-/// UI 패널 종류
-/// </summary>
 public enum UIPanel
 {
     HUD,
@@ -898,9 +835,6 @@ public enum UIPanel
     Investigation
 }
 
-/// <summary>
-/// 알림 타입
-/// </summary>
 public enum NotificationType
 {
     Info,
@@ -909,9 +843,6 @@ public enum NotificationType
     Error
 }
 
-/// <summary>
-/// 알림 데이터
-/// </summary>
 public class NotificationData
 {
     public string message;

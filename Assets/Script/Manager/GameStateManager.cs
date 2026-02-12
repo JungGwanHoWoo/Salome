@@ -21,10 +21,9 @@ public class GameStateManager : MonoBehaviour
     public enum Chapter
     {
         Prologue,
-        Spring,
-        Summer,
-        Autumn,
-        Winter,
+        Chapther1,
+        Chapther2,
+        Chapther3,
         Finale
     }
 
